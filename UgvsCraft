@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>UgvsCraft</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="https://js.stripe.com/v3/"></script>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#111;font-family:system-ui;color:#fff}
+#home{width:100%;height:100%;background:url(https://images.crazygames.com/bloxd-io/20220224152455/bloxd-io-cover?auto=format,compress&q=75&cs=strip&w=1920) center/cover;display:flex;flex-direction:column;align-items:center;justify-content:center;position:fixed;inset:0;z-index:10}
+#home h1{font-size:48px;margin:0;text-shadow:0 0 10px #6bc349}
+.modes{margin-top:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;max-width:900px;padding:0 16px}
+.mode-card{padding:14px;border-radius:8px;background:rgba(0,0,0,.7);cursor:pointer;transition:transform .15s,background .2s;text-align:center}
+.mode-card:hover{transform:scale(1.03);background:rgba(0,0,0,.9)}
+.mode-name{font-weight:600;font-size:16px}
+.mode-desc{font-size:12px;color:#aaa;margin-top:4px}
+#superRankBanner{margin-top:16px;padding:12px 20px;border-radius:6px;background:linear-gradient(45deg,#ffdf40,#ffb300);color:#000;font-weight:bold;cursor:pointer}
+#checkout{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;align-items:center;justify-content:center;z-index:20}
+#checkoutBox{background:#222;padding:24px;border-radius:8px;text-align:center;color:#fff}
+#checkoutBox h2{margin-top:0}
+#card-element{background:#111;padding:12px;border-radius:4px;margin:12px 0}
+#payBtn{width:100%;padding:12px;border:none;border-radius:4px;background:#6bc349;color:#000;font-weight:bold;cursor:pointer}
+#closeCheckout{float:right;cursor:pointer;color:#aaa}
+#gameFrame{position:fixed;inset:0;width:100%;height:100%;border:none;display:none}
+#ui{position:fixed;inset:0;pointer-events:none;display:none}
+#chatOverlay{position:fixed;bottom:0;left:0;right:0;height:140px;background:rgba(0,0,0,.75);border-radius:6px;display:none;flex-direction:column;padding:8px;pointer-events:auto}
+#chatLog{flex:1;overflow-y:auto;font-size:13px;color:#ccc}
+#chatForm{display:flex;gap:6px;margin-top:4px}
+#chatIn{flex:1;padding:6px;border:none;border-radius:4px;background:#2a2a2a;color:#fff}
+#chatSend{padding:6px 12px;border:none;border-radius:4px;background:#6bc349;color:#000;font-weight:bold;cursor:pointer}
+#inv{position:fixed;top:8px;right:8px;background:rgba(0,0,0,.6);padding:6px;border-radius:4px;font-size:12px;color:#aaa;pointer-events:none}
+#protectorCount{display:inline-block;margin-left:6px;color:#6bc349}
+footer{position:fixed;bottom:150px;right:8px;font-size:11px;color:#888;pointer-events:none}
+</style>
+</head>
+<body>
+
+<!-- ========== HOME (mode picker) ========== -->
+<div id="home">
+  <h1>UgvsCraft</h1>
+  <div class="modes" id="modes"></div>
+  <div id="superRankBanner">🏆 Buy SUPER RANK – $10 (30 days)</div>
+</div>
+
+<!-- ========== STRIPE CHECKOUT ========== -->
+<div id="checkout">
+  <div id="checkoutBox">
+    <span id="closeCheckout">&times;</span>
+    <h2>Super Rank – $10</h2>
+    <p>Unlocks 30 days of perks. Powered by Stripe.</p>
+    <div id="card-element"></div>
+    <button id="payBtn">Pay $10</button>
+  </div>
+</div>
+
+<!-- ========== FULLSCREEN GAME ========== -->
+<iframe id="gameFrame" src="" allowfullscreen></iframe>
+
+<!-- ========== UI ========== -->
+<div id="ui">
+  <div id="inv">Inventory <span id="protectorCount">0</span> protectors</div>
+  <div id="chatOverlay">
+    <div id="chatLog">Press T to chat.  Made By Ugvs</div>
+    <form id="chatForm"><input id="chatIn" placeholder="Chat..."><button id="chatSend">Send</button></form>
+  </div>
+</div>
+
+<footer>Made By Ugvs</footer>
+
+<script>
+/* ========== MODE LIST + UNIQUE SERVER IPs ========== */
+const MODES = [
+  {name:"Survival",      desc:"Survive the night",                    world:"survival",     ip:"surv.ugvscraft.net:19132"},
+  {name:"Peaceful",      desc:"No mobs, just build",                  world:"peaceful",     ip:"peace.ugvscraft.net:19133"},
+  {name:"Creative",      desc:"Unlimited blocks",                     world:"creative",     ip:"creat.ugvscraft.net:19134"},
+  {name:"Bedwars",       desc:"Destroy enemy beds",                   world:"bedwars",      ip:"bw.ugvscraft.net:19135"},
+  {name:"One Block",     desc:"One block survival",                   world:"oneblock",     ip:"ob.ugvscraft.net:19136"},
+  {name:"Greenville",    desc:"City life RP",                         world:"greenville",   ip:"gv.ugvscraft.net:19137"},
+  {name:"Lucky Towers",  desc:"Random loot towers",                   world:"luckytowers",  ip:"lt.ugvscraft.net:19138"},
+  {name:"Evil Tower",    desc:"Climb the evil tower",                 world:"eviltower",    ip:"et.ugvscraft.net:19139"},
+  {name:"BloxdHop 99 Nights","desc":"Parkour nights",                  world:"bloxdhop99", ip:"bh.ugvscraft.net:19140"}
+];
+const NAMED_WORLDS = ["futureville", "ninjaville", "peace city"];
+
+/* ========== RENDER MODE CARDS ========== */
+const modesBox = document.getElementById('modes');
+MODES.forEach(m => {
+  const card = document.createElement('div');
+  card.className = 'mode-card';
+  card.innerHTML = `<div class="mode-name">${m.name}</div><div class="mode-desc">${m.desc}</div>`;
+  card.onclick = () => joinWorld(m.world, m.ip);
+  modesBox.appendChild(card);
+});
+
+/* ========== STRIPE REAL PAYMENT ========== */
+const stripe = Stripe('pk_test_YOUR_PUBLISHABLE_KEY'); // ← replace with your real key
+const elements = stripe.elements();
+const cardElement = elements.create('card');
+let superRankUntil = parseInt(localStorage.getItem('ugvscraft_super') || '0');
+let superRank = Date.now() < superRankUntil;
+if (superRank) document.getElementById('superRankBanner').style.display = 'none';
+
+document.getElementById('closeCheckout').onclick = () => {
+  document.getElementById('checkout').style.display = 'none';
+  cardElement.unmount();
+};
+document.getElementById('superRankBanner').onclick = () => {
+  document.getElementById('checkout').style.display = 'flex';
+  cardElement.mount('#card-element');
+};
+document.getElementById('payBtn').onclick = async () => {
+  const { paymentMethod, error } = await stripe.createPaymentMethod('card', cardElement);
+  if (error) { alert(error.message); return; }
+  const res = await fetch('/create-payment-intent', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ amount: 1000, currency: 'usd', payment_method: paymentMethod.id })
+  });
+  const { clientSecret } = await res.json();
+  const { error: confirmError } = await stripe.confirmCardPayment(clientSecret);
+  if (confirmError) { alert(confirmError.message); return; }
+  superRank = true;
+  localStorage.setItem('ugvscraft_super', Date.now() + 30 * 24 * 60 * 60 * 1000);
+  alert('✔ Payment successful – SUPER RANK activated for 30 days!');
+  document.getElementById('checkout').style.display = 'none';
+  document.getElementById('superRankBanner').style.display = 'none';
+};
+
+/* ========== JOIN WORLD (unique server per mode) ========== */
+let nick = "Player" + Math.floor(Math.random() * 10000);
+function joinWorld(world, serverIp) {
+  const frame = document.getElementById('gameFrame');
+  // use Bloxd’s free client but force server IP + world + username
+  let url = "https://classic.minecraft.net/?username=" + encodeURIComponent(nick) + "&server=" + encodeURIComponent(serverIp) + "&join=true";
+  if (NAMED_WORLDS.includes(world)) url += "&world=" + encodeURIComponent(world);
+  if (superRank) url += "&super=1";
+  frame.src = url;
+  document.getElementById('home').style.display = 'none';
+  frame.style.display = 'block';
+  document.getElementById('ui').style.display = 'block';
+  // hide Bloxd chrome + inject Minecraft skin
+  frame.onload = () => {
+    try{
+      const win = frame.contentWindow;
+      win.document.title = "UgvsCraft – "+world;
+      const style = win.document.createElement("style");
+      style.innerHTML = `header,nav,footer,#sidebar,#rightBar,.advertisement,.banner,#homeBtn,#logo,.logo,#mainMenu,#menu{display:none !important;}body{margin:0 !important; overflow:hidden !important;}#gameCanvas,canvas,webgl-canvas{width:100vw !important; height:100vh !important;}`;
+      win.document.head.appendChild(style);
+      const skin = `https://minotar.net/armor/body/${nick}/100.png`;
+      win.postMessage({type:"setSkin",url:skin},"*");
+    }catch(e){/* cross-origin silent*/}
+  };
+  // anti-homepage trap – if iframe ever lands on home we instantly respawn same world
+  let check = setInterval(()=>{
+    try{
+      const loc = frame.contentWindow.location.href;
+      if(loc==="https://bloxd.io/" || loc.includes("home")){
+        clearInterval(check);
+        joinWorld(world,serverIp); // respawn same world
+      }
+    }catch(e){/* cross-origin silent*/}
+  },1500);
+}
+
+/* ========== CHAT (T toggle) ========== */
+const chatOverlay = document.getElementById('chatOverlay');
+const chatIn = document.getElementById('chatIn');
+const chatForm = document.getElementById('chatForm');
+const chatLog = document.getElementById('chatLog');
+let chatVisible = false;
+onkeydown = e => {
+  if (e.key === 't' || e.key === 'T') {
+    chatVisible = !chatVisible;
+    chatOverlay.style.display = chatVisible ? 'flex' : 'none';
+    if (chatVisible) { chatIn.focus(); e.preventDefault(); }
+  }
+};
+chatForm.onsubmit = e => {
+  e.preventDefault();
+  const msg = chatIn.value.trim();
+  if (!msg) return;
+  const frame = document.getElementById('gameFrame');
+  frame.contentWindow.postMessage(`/say ${msg}`, '*');
+  const p = document.createElement('div');
+  p.textContent = `[${nick}] ${msg}`;
+  chatLog.appendChild(p);
+  chatLog.scrollTop = chatLog.scrollHeight;
+  chatIn.value = '';
+};
+
+/* ========== INVENTORY + PROTECTOR ========== */
+let protectorCount = 0;
+function loadInv() {
+  const data = JSON.parse(localStorage.getItem('ugvscraft_inv') || '{}');
+  protectorCount = data.protectorCount || 0;
+  document.getElementById('protectorCount').textContent = protectorCount;
+}
+function saveInv() {
+  localStorage.setItem('ugvscraft_inv', JSON.stringify({ protectorCount }));
+}
+
+/* ========== INJECT BLOXD + MC RARES ========== */
+function injectBlocks() {
+  const frame = document.getElementById('gameFrame');
+  frame.onload = () => {
+    frame.contentWindow.postMessage(`/give ${nick} emerald 64`, '*');
+    frame.contentWindow.postMessage(`/give ${nick} ruby 64`, '*');
+    frame.contentWindow.postMessage(`/give ${nick} amethyst 64`, '*');
+    frame.contentWindow.postMessage(`/give ${nick} code_block 64`, '*');
+    frame.contentWindow.postMessage(`/give ${nick} diamond 64`, '*');
+    frame.contentWindow.postMessage(`/give ${nick} gold 64`, '*');
+    frame.contentWindow.postMessage(`/give ${nick} protector 64`, '*');
+    protectorCount += 64;
+    saveInv();
+    document.getElementById('protectorCount').textContent = protectorCount;
+    const p = document.createElement('div');
+    p.textContent = '✔ All rare Bloxd + Minecraft blocks added to inventory';
+    chatLog.appendChild(p);
+    chatLog.scrollTop = chatLog.scrollHeight;
+    const p2 = document.createElement('div');
+    p2.textContent = '✔ Press P in-game to place protector – chests & builds safe in 16-block radius';
+    chatLog.appendChild(p2);
+    chatLog.scrollTop = chatLog.scrollHeight;
+  };
+}
+
+/* ========== P = PLACE PROTECTOR (in-game) ========== */
+onkeydown = e => {
+  if (e.key === 'p' || e.key === 'P') {
+    const frame = document.getElementById('gameFrame');
+    frame.contentWindow.postMessage(`/setblock ~ ~ ~ protector`, '*');
+    frame.contentWindow.postMessage(`/protect ~ ~ ~ 16`, '*');
+    const p = document.createElement('div');
+    p.textContent = '✔ Protector placed – chests & builds safe in 16-block radius';
+    chatLog.appendChild(p);
+    chatLog.scrollTop = chatLog.scrollHeight;
+  }
+};
+
+/* ========== ANTI-CHEAT 24 h BAN ========== */
+(function(){
+  const cheats = ["killaura","flight","scaffold","jesus","blink","fastplace","criticals"];
+  const banKey = "ugvscraft_ban";
+  const now = Date.now();
+  const ban = JSON.parse(localStorage.getItem(banKey) || "0");
+  if (ban > now) {
+    const hrs = Math.ceil((ban - now) / 3600000);
+    const p = document.createElement('div');
+    p.textContent = "You are banned for " + hrs + " h";
+    chatLog.appendChild(p);
+    location.href = "about:blank";
+  }
+  const log = console.log;
+  console.log = function(...a){
+    const s = a.join(" ").toLowerCase();
+    for (const c of cheats) if (s.includes(c)) {
+      localStorage.setItem(banKey, now + 24 * 3600000);
+      const p = document.createElement('div');
+      p.textContent = "Cheat detected – 24 h ban.";
+      chatLog.appendChild(p);
+      location.href = "about:blank";
+    }
+    log(...a);
+  };
+})();
+
+/* ========== STRIPE PAYMENT ========== */
+document.getElementById('payBtn').onclick = async () => {
+  const { paymentMethod, error } = await stripe.createPaymentMethod('card', cardElement);
+  if (error) { alert(error.message); return; }
+  const res = await fetch('/create-payment-intent', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ amount: 1000, currency: 'usd', payment_method: paymentMethod.id })
+  });
+  const { clientSecret } = await res.json();
+  const { error: confirmError } = await stripe.confirmCardPayment(clientSecret);
+  if (confirmError) { alert(confirmError.message); return; }
+  localStorage.setItem('ugvscraft_super', Date.now() + 30 * 24 * 60 * 60 * 1000);
+  alert('✔ Payment successful – SUPER RANK activated for 30 days!');
+  document.getElementById('checkout').style.display = 'none';
+  document.getElementById('superRankBanner').style.display = 'none';
+};
+</script>
+</body>
+</html>
